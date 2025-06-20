@@ -6,7 +6,7 @@ import { addDays } from 'date-fns';
 import { generateJobHash } from '../utils/jobHash';
 
 // Helper functions to convert enums to database string values
-function statusToDbString(status: JobStatus): 'pending' | 'running' | 'completed' | 'failed' {
+function convertStatusToDbString(status: JobStatus): 'pending' | 'running' | 'completed' | 'failed' {
   switch (status) {
     case JobStatus.PENDING:
       return 'pending';
@@ -54,7 +54,7 @@ const dummyJobs = Array.from({ length: 30 }).map((_, i) => {
   const jobData = {
     name: `Dummy Job ${i + 1}`,
     description: `This is a dummy job to simulate ${freq} tasks`,
-    status: statusToDbString(JobStatus.PENDING),
+    status: convertStatusToDbString(JobStatus.PENDING),
     frequency: frequencyToDbString(freq),
     cronExpression: cronMap[freq],
     startDate: now,

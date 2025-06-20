@@ -33,7 +33,7 @@ function mapDbRowToJob(job: any): Job {
 }
 
 // Helper functions to convert enums to database string values
-function statusToDbString(status: JobStatus): 'pending' | 'running' | 'completed' | 'failed' {
+function convertStatusToDbString(status: JobStatus): 'pending' | 'running' | 'completed' | 'failed' {
   switch (status) {
     case JobStatus.PENDING:
       return 'pending';
@@ -124,7 +124,7 @@ export class JobService {
       logger.info('Initializing jobs...');
       const activeJobs = await db.select().from(jobs).where(
         and(
-          eq(jobs.status, statusToDbString(JobStatus.PENDING)),
+          eq(jobs.status, convertStatusToDbString(JobStatus.PENDING)),
           eq(jobs.enabled, true)
         )
       );
@@ -385,7 +385,7 @@ export class JobService {
     const insertData = {
       ...jobData,
       frequency: frequencyToDbString(jobData.frequency),
-      status: statusToDbString(jobData.status || JobStatus.PENDING),
+      status: convertStatusToDbString(jobData.status || JobStatus.PENDING),
       dataHash,
       nextRunAt: calculateNextRun(jobData as Job),
     };
@@ -429,7 +429,7 @@ export class JobService {
     }
     
     if (jobData.status) {
-      updateData.status = statusToDbString(jobData.status);
+      updateData.status = convertStatusToDbString(jobData.status);
     }
     
     const result = await db
@@ -597,7 +597,7 @@ export class JobService {
     const dbStartTime = performance.now();
     try {
       const offset = (page - 1) * limit;
-      const whereClause = status ? eq(jobs.status, statusToDbString(status)) : undefined;
+      const whereClause = status ? eq(jobs.status, convertStatusToDbString(status)) : undefined;
 
       const [jobsList, total] = await Promise.all([
         db
@@ -683,7 +683,7 @@ export class JobService {
         .from(jobs)
         .where(
           and(
-            eq(jobs.status, statusToDbString(JobStatus.PENDING)),
+            eq(jobs.status, convertStatusToDbString(JobStatus.PENDING)),
             eq(jobs.enabled, true),
             gte(jobs.nextRunAt!, new Date())
           )
