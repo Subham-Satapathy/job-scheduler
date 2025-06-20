@@ -10,7 +10,7 @@ import { cacheService } from './cache.service';
 import { generateJobHash, DuplicateCheckFields } from '../utils/jobHash';
 
 // Helper function to ensure job data is properly typed
-function toJob(job: any): Job {
+function mapDbRowToJob(job: any): Job {
   return {
     id: job.id,
     name: job.name,
@@ -130,7 +130,7 @@ export class JobService {
       );
       logger.info(`Found ${activeJobs.length} pending and enabled jobs to initialize`);
       
-      for (const job of activeJobs.map(toJob)) {
+      for (const job of activeJobs.map(mapDbRowToJob)) {
         await this.scheduleJob(job);
       }
       
@@ -146,7 +146,7 @@ export class JobService {
   }
 
   private async scheduleJob(job: Job) {
-    const safeJob = toJob(job);
+    const safeJob = mapDbRowToJob(job);
     
     // Skip scheduling if job is disabled
     if (!safeJob.enabled) {
@@ -248,7 +248,7 @@ export class JobService {
           totalTimeMs: totalTime,
           jobId: job.id
         });
-        return toJob(job);
+        return mapDbRowToJob(job);
       }
       
       // Cache miss - check database with retry logic for high load
@@ -278,7 +278,7 @@ export class JobService {
           const totalTime = performance.now() - startTime;
           
           if (existingJobs.length > 0) {
-            const job = toJob(existingJobs[0]);
+            const job = mapDbRowToJob(existingJobs[0]);
             
             // Cache the result for future lookups (24 hour TTL)
             await cacheService.set(cacheKey, JSON.stringify(job), JobService.CACHE_TTL.INDIVIDUAL_JOB * 96); // 24 hours
@@ -392,7 +392,7 @@ export class JobService {
     
     const [job] = await db.insert(jobs).values(insertData).returning();
     
-    const safeJob = toJob(job);
+    const safeJob = mapDbRowToJob(job);
     
     // Cache the new job for future duplicate checks
     const cacheKey = `${JobService.CACHE_KEYS.DUPLICATE_CHECK}:${dataHash}`;
@@ -439,7 +439,7 @@ export class JobService {
       .returning();
 
     if (result.length > 0) {
-      const safeJob = toJob(result[0]);
+      const safeJob = mapDbRowToJob(result[0]);
       
       // Remove existing job from queue
       await this.queue.removeJobScheduler(`job-${id}`);
@@ -493,7 +493,7 @@ export class JobService {
         totalExecutionTimeMs: executionTime,
         cacheLookupTimeMs: cacheTime
       });
-      return toJob(JSON.parse(cachedJob));
+      return mapDbRowToJob(JSON.parse(cachedJob));
     }
     
     // If not in cache, get from database
@@ -536,7 +536,7 @@ export class JobService {
       }
       
       const transformStartTime = performance.now();
-      const job = toJob(result[0]);
+      const job = mapDbRowToJob(result[0]);
       const transformTime = performance.now() - transformStartTime;
       
       // Cache the result
@@ -588,7 +588,7 @@ export class JobService {
       });
       const parsed = JSON.parse(cachedResult);
       return {
-        jobs: parsed.jobs.map(toJob),
+        jobs: parsed.jobs.map(mapDbRowToJob),
         total: parsed.total
       };
     }
@@ -618,7 +618,7 @@ export class JobService {
       
       const transformStartTime = performance.now();
       const result = {
-        jobs: jobsList.map(toJob),
+        jobs: jobsList.map(mapDbRowToJob),
         total,
       };
       const transformTime = performance.now() - transformStartTime;
@@ -672,7 +672,7 @@ export class JobService {
         totalExecutionTimeMs: executionTime,
         cacheLookupTimeMs: cacheTime
       });
-      return JSON.parse(cachedJobs).map(toJob);
+      return JSON.parse(cachedJobs).map(mapDbRowToJob);
     }
     
     // If not in cache, get from database
@@ -694,7 +694,7 @@ export class JobService {
       const dbTime = performance.now() - dbStartTime;
       
       const transformStartTime = performance.now();
-      const result = jobsList.map(toJob);
+      const result = jobsList.map(mapDbRowToJob);
       const transformTime = performance.now() - transformStartTime;
       
       // Cache the result
@@ -737,7 +737,7 @@ export class JobService {
       .returning();
 
     if (result.length > 0) {
-      const safeJob = toJob(result[0]);
+      const safeJob = mapDbRowToJob(result[0]);
       
       // Invalidate all related caches
       await cacheService.invalidateAllJobCaches(id);
@@ -769,7 +769,7 @@ export class JobService {
       .returning();
 
     if (result.length > 0) {
-      const safeJob = toJob(result[0]);
+      const safeJob = mapDbRowToJob(result[0]);
       
       // Remove job from queue since it's disabled
       await this.queue.removeJobScheduler(`job-${id}`);
@@ -802,7 +802,7 @@ export class JobService {
       .returning();
     
     if (job) {
-      const safeJob = toJob(job);
+      const safeJob = mapDbRowToJob(job);
       
       // Invalidate all job caches since retry count changed
       await cacheService.invalidateAllJobCaches(id);
