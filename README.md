@@ -24,47 +24,290 @@ A scalable job scheduler microservice built with Node.js, TypeScript, and BullMQ
 - **Caching**: Redis-based caching for improved performance
 - **Scalable Architecture**: Designed to handle 10,000+ users and 1,000+ services
 
-## Quick Start
+## Project Setup
 
-### Prerequisites
+Choose your preferred setup method:
 
-- Node.js 18+
-- PostgreSQL
-- Redis
-- Docker (optional)
+### Option 1: Docker Setup (Recommended)
 
-### Installation
+This is the fastest way to get started with all dependencies included.
+
+#### Prerequisites
+- Docker
+- Docker Compose
+
+#### Setup Steps
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd job-scheduler
+   ```
+
+2. **Environment Configuration**
+   ```bash
+   # Copy environment template
+   cp .env.example .env
+   
+   # Edit .env file with Docker-specific settings (optional)
+   # Default Docker settings should work out of the box
+   ```
+
+3. **Build and Start Services**
+   ```bash
+   # Build and start all services (app, PostgreSQL, Redis)
+   docker-compose up --build
+   
+   # Or run in detached mode
+   docker-compose up --build -d
+   ```
+
+4. **Verify Setup**
+   ```bash
+   # Check if services are running
+   docker-compose ps
+   
+   # View logs
+   docker-compose logs -f app
+   
+   # Test the application
+   curl http://localhost:3000/health
+   ```
+
+5. **Database Setup**
+   ```bash
+   # Run database migrations (if needed)
+   docker-compose exec app npm run db:push
+   
+   # Seed database with sample data (optional)
+   docker-compose exec app npm run db:seed
+   ```
+
+#### Useful Docker Commands
 
 ```bash
-# Install dependencies
-npm install
+# Stop all services
+docker-compose down
 
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your database and Redis configuration
+# Rebuild after code changes
+docker-compose up --build
 
-# Run database migrations
-npm run db:push
+# View service logs
+docker-compose logs <service-name>
 
-# Build the application
-npm run build
+# Execute commands in running container
+docker-compose exec app npm test
 
-# Start the application
-npm start
+# Reset everything (removes volumes)
+docker-compose down -v
 ```
 
-### Development
+### Option 2: Local Development Setup
+
+Set up the application directly on your local machine.
+
+#### Prerequisites
+
+- **Node.js 18+** (LTS recommended)
+- **PostgreSQL 14+**
+- **Redis 6+**
+- **npm** or **yarn**
+
+#### Setup Steps
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd job-scheduler
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Database Setup**
+   ```bash
+   # Start PostgreSQL service (varies by OS)
+   # macOS with Homebrew:
+   brew services start postgresql
+   
+   # Ubuntu/Debian:
+   sudo systemctl start postgresql
+   
+   # Windows: Start PostgreSQL service from Services panel
+   
+   # Create database
+   createdb job_scheduler
+   
+   # Or connect to PostgreSQL and create manually:
+   psql -U postgres
+   CREATE DATABASE job_scheduler;
+   \q
+   ```
+
+4. **Redis Setup**
+   ```bash
+   # Start Redis service (varies by OS)
+   # macOS with Homebrew:
+   brew services start redis
+   
+   # Ubuntu/Debian:
+   sudo systemctl start redis-server
+   
+   # Windows: Download and run Redis from https://redis.io/download
+   
+   # Verify Redis is running
+   redis-cli ping
+   # Should return: PONG
+   ```
+
+5. **Environment Configuration**
+   ```bash
+   # Copy environment template
+   cp .env.example .env
+   ```
+   
+   Edit `.env` file with your local settings:
+   ```env
+   # Database
+   DATABASE_URL=postgresql://username:password@localhost:5432/job_scheduler
+   
+   # Redis
+   REDIS_URL=redis://localhost:6379
+   
+   # Application
+   PORT=3000
+   NODE_ENV=development
+   
+   # Rate Limiting
+   RATE_LIMIT_IP_WINDOW_MS=60000
+   RATE_LIMIT_IP_MAX_REQUESTS=120
+   ```
+
+6. **Database Migration**
+   ```bash
+   # Run database migrations
+   npm run db:push
+   
+   # Verify database schema
+   npm run db:studio
+   ```
+
+7. **Build and Start**
+   ```bash
+   # Build the application
+   npm run build
+   
+   # Start in production mode
+   npm start
+   
+   # OR start in development mode (with auto-reload)
+   npm run dev
+   ```
+
+8. **Verify Setup**
+   ```bash
+   # Test the application
+   curl http://localhost:3000/health
+   
+   # Check rate limiting stats
+   curl http://localhost:3000/rate-limit-stats
+   ```
+
+#### Development Workflow
 
 ```bash
-# Start in development mode
+# Start in development mode (auto-reload)
 npm run dev
 
 # Run tests
 npm test
 
-# Run load tests
+# Run tests in watch mode
+npm run test:watch
+
+# Run load tests (requires app to be running)
 npm run test:load
+
+# Run all tests
+npm run test:all
+
+# Database operations
+npm run db:push     # Apply schema changes
+npm run db:studio   # Open database browser
+npm run db:seed     # Seed with sample data
 ```
+
+## Quick Start
+
+After completing either setup option above:
+
+### Basic Usage
+
+```bash
+# Create a job
+curl -X POST http://localhost:3000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Test Job",
+    "description": "A test job",
+    "enabled": true,
+    "frequency": "DAILY",
+    "startDate": "2024-12-20T09:00:00.000Z",
+    "data": {"test": true}
+  }'
+
+# List jobs
+curl http://localhost:3000/jobs
+
+# Get job by ID
+curl http://localhost:3000/jobs/1
+
+# Enable/disable job
+curl -X PATCH http://localhost:3000/jobs/1/disable
+curl -X PATCH http://localhost:3000/jobs/1/enable
+```
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **Port already in use**
+   ```bash
+   # Check what's using port 3000
+   lsof -i :3000
+   
+   # Kill the process or use a different port
+   PORT=3001 npm start
+   ```
+
+2. **Database connection issues**
+   ```bash
+   # Check PostgreSQL is running
+   pg_isready
+   
+   # Check database exists
+   psql -l | grep job_scheduler
+   ```
+
+3. **Redis connection issues**
+   ```bash
+   # Check Redis is running
+   redis-cli ping
+   
+   # Check Redis configuration
+   redis-cli config get "*"
+   ```
+
+4. **Permission issues (Linux/macOS)**
+   ```bash
+   # Fix npm permissions
+   sudo chown -R $(whoami) ~/.npm
+   
+   # Or use nvm for Node.js management
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+   ```
 
 ## API Documentation
 
@@ -436,16 +679,79 @@ npm run test:all
 
 ## Docker
 
+### Docker Compose (Recommended)
+
+The easiest way to run the complete application stack:
+
 ```bash
-# Build and run with Docker Compose
+# Start all services (app, PostgreSQL, Redis)
 docker-compose up --build
 
-# Build Docker image
-npm run docker:build
+# Run in background
+docker-compose up --build -d
 
-# Run Docker container
-npm run docker:run
+# View logs
+docker-compose logs -f
+
+# Stop all services
+docker-compose down
 ```
+
+### Individual Docker Commands
+
+If you prefer to build and run containers individually:
+
+```bash
+# Build Docker image
+docker build -t job-scheduler .
+
+# Run the application container (requires external PostgreSQL and Redis)
+docker run -p 3000:3000 \
+  -e DATABASE_URL=postgresql://user:pass@host:5432/db \
+  -e REDIS_URL=redis://host:6379 \
+  job-scheduler
+
+# Run with environment file
+docker run -p 3000:3000 --env-file .env job-scheduler
+```
+
+### Production Docker Setup
+
+For production deployments:
+
+```bash
+# Build optimized production image
+docker build -t job-scheduler:prod --target production .
+
+# Run with production settings
+docker run -d \
+  --name job-scheduler-prod \
+  -p 3000:3000 \
+  --restart unless-stopped \
+  --env-file .env.production \
+  job-scheduler:prod
+```
+
+### Docker Environment Variables
+
+Key environment variables for Docker deployment:
+
+```env
+# Required
+DATABASE_URL=postgresql://user:password@postgres:5432/job_scheduler
+REDIS_URL=redis://redis:6379
+
+# Optional
+PORT=3000
+NODE_ENV=production
+LOG_LEVEL=info
+
+# Rate Limiting
+RATE_LIMIT_IP_WINDOW_MS=60000
+RATE_LIMIT_IP_MAX_REQUESTS=120
+```
+
+For complete setup instructions, see the [Project Setup](#project-setup) section above.
 
 ## Contributing
 
