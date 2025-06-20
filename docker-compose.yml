@@ -1,0 +1,60 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
+      - BULLMQ_REDIS_URL=redis://redis:6379
+      - BULLMQ_PREFIX=scheduler
+      - DATABASE_URL=postgresql://scheduler_user:scheduler_password@postgres:5432/scheduler_db
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - scheduler-network
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=scheduler_db
+      - POSTGRES_USER=scheduler_user
+      - POSTGRES_PASSWORD=scheduler_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - scheduler-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scheduler_user -d scheduler_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - scheduler-network
+
+
+
+volumes:
+  redis_data:
+  postgres_data:
+
+networks:
+  scheduler-network:
+    driver: bridge 

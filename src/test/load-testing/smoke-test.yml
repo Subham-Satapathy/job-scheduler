@@ -1,0 +1,45 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    # Quick smoke test - verify basic functionality
+    - duration: 10
+      arrivalRate: 1
+      name: 'Smoke Test - Basic Connectivity'
+
+  # Simple validation
+  ensure:
+    - p99: 1000  # Liberal timeout for initial test
+
+scenarios:
+  # Test 1: Health check (should always work)
+  - name: 'Health Check'
+    weight: 50
+    flow:
+      - get:
+          url: '/health'
+          expect:
+            - statusCode: 200
+            - contentType: json
+      - think: 1
+
+  # Test 2: Rate limit stats (should always work)
+  - name: 'Rate Limit Stats'
+    weight: 30
+    flow:
+      - get:
+          url: '/rate-limit-stats'
+          expect:
+            - statusCode: 200
+            - contentType: json
+            - hasProperty: 'configuration'
+      - think: 1
+
+  # Test 3: Basic API endpoint (might require database)
+  - name: 'Jobs API Check'
+    weight: 20
+    flow:
+      - get:
+          url: '/jobs'
+          expect:
+            - statusCode: [200, 500]  # Allow errors for smoke test
+      - think: 1 

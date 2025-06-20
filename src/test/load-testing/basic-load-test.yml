@@ -1,0 +1,139 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    # Warm-up phase
+    - duration: 30
+      arrivalRate: 5
+      name: 'Warm-up (5 RPS)'
+    
+    # Baseline test - normal load
+    - duration: 60 
+      arrivalRate: 50
+      name: 'Baseline (50 RPS)'
+    
+    # Target load test - our requirement
+    - duration: 120
+      arrivalRate: 100
+      name: 'Target Load (100 RPS average)'
+    
+    # Peak capacity test - stress test
+    - duration: 60
+      arrivalRate: 200  
+      name: 'Peak Capacity (200 RPS)'
+    
+    # Burst test - beyond capacity
+    - duration: 30
+      arrivalRate: 350
+      name: 'Burst Test (350 RPS - should hit rate limits)'
+
+  # Test data and variables
+  variables:
+    testData:
+      - 'test-data-001'
+      - 'test-data-002'
+      - 'test-data-003'
+      - 'test-data-004'
+      - 'test-data-005'
+
+  # Metrics and monitoring
+  ensure:
+    # Response time requirements
+    - p95: 200   # 95% of requests under 200ms
+    - p99: 500   # 99% of requests under 500ms
+    
+    # Success rate requirements 
+    - min: 95    # At least 95% success rate overall
+
+scenarios:
+  # Test 1: Health check endpoints (no rate limiting)
+  - name: 'Health Check Test'
+    weight: 10
+    flow:
+      - get:
+          url: '/health'
+          expect:
+            - statusCode: 200
+      - think: 1
+
+  # Test 2: Rate limit stats endpoint (monitoring)
+  - name: 'Rate Limit Stats'
+    weight: 5
+    flow:
+      - get:
+          url: '/rate-limit-stats'
+          expect:
+            - statusCode: 200
+            - contentType: json
+      - think: 1
+
+  # Test 3: Job creation with unique data (UNIQUE JOBS)
+  - name: 'Job Creation - Unique Data'
+    weight: 20
+    flow:
+      - post:
+          url: '/jobs'
+          headers:
+            Content-Type: 'application/json'
+          json:
+            name: 'LoadTest Job Unique {{ $testId }}-{{ $uuid }}'
+            description: 'Unique job with test data - VU {{ $uuid }} in test {{ $testId }}'
+            frequency: 'ONCE'
+            startDate: '2024-12-31T00:00:00Z'
+            data: 
+              test: true
+              testId: '{{ $testId }}'
+              vuId: '{{ $uuid }}'
+              scenario: 'unique-data'
+          expect:
+            # Should be 201 (success) or 429 (rate limited), NOT 409 (duplicate)
+            - statusCode: [201, 429]
+      - think: 2
+
+  # Test 4: Job creation with different data (UNIQUE JOBS)
+  - name: 'Job Creation - Different Data'
+    weight: 30
+    flow:
+      - post:
+          url: '/jobs'
+          headers:
+            Content-Type: 'application/json'
+          json:
+            name: 'LoadTest Job Data {{ $testId }}-{{ $uuid }}'
+            description: 'Unique job with different data - VU {{ $uuid }} in test {{ $testId }}'
+            frequency: 'DAILY'
+            startDate: '2024-12-31T00:00:00Z'
+            data: 
+              dataTest: true
+              testId: '{{ $testId }}'
+              vuId: '{{ $uuid }}'
+              scenario: 'different-data'
+          expect:
+            # Should be 201 (success) or 429 (rate limited), NOT 409 (duplicate)
+            - statusCode: [201, 429]
+      - think: 1
+
+  # Test 5: Job listing (cached responses)
+  - name: 'Job Listing - Cached'
+    weight: 25
+    flow:
+      - get:
+          url: '/jobs'
+          expect:
+            - statusCode: [200, 404, 429]
+      - think: 1
+
+  # Test 6: Job details lookup (cache performance)
+  - name: 'Job Details Lookup'
+    weight: 10
+    flow:
+      - get:
+          url: '/jobs/1'
+          expect:
+            - statusCode: [200, 404, 429]
+      - think: 1
+
+# Custom metrics and reporting
+plugins:
+  expect: {}
+  metrics-by-endpoint:
+    # Group metrics by endpoint for detailed analysis 

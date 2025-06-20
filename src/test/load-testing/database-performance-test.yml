@@ -1,0 +1,95 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    # Database stress test phases
+    - duration: 30
+      arrivalRate: 10
+      name: 'DB Warm-up (10 RPS)'
+    
+    - duration: 60
+      arrivalRate: 50
+      name: 'DB Load Test (50 RPS)'
+    
+    - duration: 90
+      arrivalRate: 100
+      name: 'DB Stress Test (100 RPS)'
+    
+    - duration: 60
+      arrivalRate: 150
+      name: 'DB Heavy Load (150 RPS)'
+
+  variables:
+    # Test services for database operations
+    testServices:
+      - 'db-test-service-001'
+      - 'db-test-service-002'
+      - 'db-test-service-003'
+
+  # Database performance requirements
+  ensure:
+    # Response time requirements for database operations
+    - p95: 300   # 95% of requests under 300ms (database operations are slower)
+    - p99: 800   # 99% of requests under 800ms
+    
+    # Success rate requirements
+    - min: 90    # At least 90% success rate under database load
+
+scenarios:
+  # Test 1: Job creation (database writes) - UNIQUE JOBS
+  - name: 'Database Write Load'
+    weight: 40
+    flow:
+      - post:
+          url: '/jobs'
+          headers:
+            Content-Type: 'application/json'
+          json:
+            name: 'DB Load Job {{ $testId }}-{{ $uuid }}'
+            description: 'Database load test job - VU {{ $uuid }} in test {{ $testId }}'
+            frequency: 'WEEKLY'
+            startDate: '2024-12-31T00:00:00Z'
+            data: 
+              dbTest: true
+              testId: '{{ $testId }}'
+              vuId: '{{ $uuid }}'
+              scenario: 'database-write'
+              loadLevel: 'high'
+          expect:
+            - statusCode: [201, 429, 500]  # 500 might occur under extreme db load
+      - think: 1
+
+  # Test 2: Job listing (database reads with complex queries)
+  - name: 'Database Read Load'  
+    weight: 35
+    flow:
+      - get:
+          url: '/jobs'
+          expect:
+            - statusCode: [200, 429, 500]  # 500 might occur under extreme db load
+      - think: 0.5
+
+  # Test 3: Job details (database joins and lookups)
+  - name: 'Database Complex Query Load'
+    weight: 15
+    flow:
+      - get:
+          url: '/jobs/1'
+          expect:
+            - statusCode: [200, 404, 429, 500]
+      - think: 0.3
+
+  # Test 4: Health check (should remain responsive)
+  - name: 'Health Check During DB Load'
+    weight: 10
+    flow:
+      - get:
+          url: '/health'
+          expect:
+            - statusCode: 200
+            - responseTime: 100  # Health check should be fast even under load
+      - think: 2
+
+plugins:
+  expect: {}
+  metrics-by-endpoint:
+    # Track database performance by endpoint 

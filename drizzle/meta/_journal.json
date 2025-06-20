@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1750066482768,
+      "tag": "0000_overconfident_doctor_faustus",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1750258681553,
+      "tag": "0001_complete_iron_monger",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1750339780846,
+      "tag": "0002_uneven_next_avengers",
+      "breakpoints": true
+    }
+  ]
+}
