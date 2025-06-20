@@ -14,15 +14,20 @@ const logger_1 = require("../utils/logger");
 const bullmq_config_1 = require("../config/bullmq.config");
 const cache_service_1 = require("./cache.service");
 const jobHash_1 = require("../utils/jobHash");
-// Helper function to ensure job data is properly typed
-function toJob(job) {
+/**
+ * Maps a database row object to a strongly-typed Job domain object
+ * Handles enum conversion and date parsing from database format to application format
+ * @param job - Raw database row object from Drizzle query
+ * @returns Fully typed Job object with converted enums and parsed dates
+ */
+function mapDbRowToJob(job) {
     return {
         id: job.id,
         name: job.name,
         description: job.description,
-        status: dbStringToStatus(job.status),
+        status: convertDbStringToStatus(job.status),
         enabled: Boolean(job.enabled),
-        frequency: dbStringToFrequency(job.frequency),
+        frequency: convertDbStringToFrequency(job.frequency),
         cronExpression: job.cronExpression,
         startDate: new Date(job.startDate),
         endDate: job.endDate ? new Date(job.endDate) : null,
@@ -36,8 +41,13 @@ function toJob(job) {
         updatedAt: new Date(job.updatedAt),
     };
 }
-// Helper functions to convert enums to database string values
-function statusToDbString(status) {
+/**
+ * Converts JobStatus enum to database string representation
+ * Maps application enum values to database-compatible string values
+ * @param status - JobStatus enum value from application domain
+ * @returns Database string value ('pending' | 'running' | 'completed' | 'failed')
+ */
+function convertStatusToDbString(status) {
     switch (status) {
         case job_1.JobStatus.PENDING:
             return 'pending';
@@ -53,7 +63,13 @@ function statusToDbString(status) {
             return 'pending';
     }
 }
-function frequencyToDbString(frequency) {
+/**
+ * Converts JobFrequency enum to database string representation
+ * Maps application enum values to database-compatible string values
+ * @param frequency - JobFrequency enum value from application domain
+ * @returns Database string value ('once' | 'daily' | 'weekly' | 'monthly' | 'custom')
+ */
+function convertFrequencyToDbString(frequency) {
     switch (frequency) {
         case job_1.JobFrequency.ONCE:
             return 'once';
@@ -70,7 +86,7 @@ function frequencyToDbString(frequency) {
     }
 }
 // Helper functions to convert between database and application types
-function dbStringToStatus(status) {
+function convertDbStringToStatus(status) {
     switch (status.toUpperCase()) {
         case 'PENDING': return job_1.JobStatus.PENDING;
         case 'RUNNING': return job_1.JobStatus.RUNNING;
@@ -82,7 +98,7 @@ function dbStringToStatus(status) {
             return job_1.JobStatus.PENDING;
     }
 }
-function dbStringToFrequency(frequency) {
+function convertDbStringToFrequency(frequency) {
     // Normalize to uppercase for backward compatibility
     const normalizedFrequency = frequency.toString().toUpperCase();
     switch (normalizedFrequency) {
@@ -103,9 +119,9 @@ class JobService {
     async initializeJobs() {
         try {
             logger_1.logger.info('Initializing jobs...');
-            const activeJobs = await db_1.default.select().from(schema_1.jobs).where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.jobs.status, statusToDbString(job_1.JobStatus.PENDING)), (0, drizzle_orm_1.eq)(schema_1.jobs.enabled, true)));
+            const activeJobs = await db_1.default.select().from(schema_1.jobs).where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.jobs.status, convertStatusToDbString(job_1.JobStatus.PENDING)), (0, drizzle_orm_1.eq)(schema_1.jobs.enabled, true)));
             logger_1.logger.info(`Found ${activeJobs.length} pending and enabled jobs to initialize`);
-            for (const job of activeJobs.map(toJob)) {
+            for (const job of activeJobs.map(mapDbRowToJob)) {
                 await this.scheduleJob(job);
             }
             logger_1.logger.info('Job initialization completed successfully');
@@ -120,7 +136,7 @@ class JobService {
         }
     }
     async scheduleJob(job) {
-        const safeJob = toJob(job);
+        const safeJob = mapDbRowToJob(job);
         // Skip scheduling if job is disabled
         if (!safeJob.enabled) {
             logger_1.logger.info('Skipping scheduling for disabled job', {
@@ -204,7 +220,7 @@ class JobService {
                     totalTimeMs: totalTime,
                     jobId: job.id
                 });
-                return toJob(job);
+                return mapDbRowToJob(job);
             }
             // Cache miss - check database with retry logic for high load
             const dbStartTime = performance.now();
@@ -214,7 +230,7 @@ class JobService {
                 try {
                     const existingJobs = await Promise.race([
                         db_1.default.select().from(schema_1.jobs)
-                            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.jobs.name, fields.name), (0, drizzle_orm_1.eq)(schema_1.jobs.frequency, frequencyToDbString(fields.frequency)), fields.cronExpression === null
+                            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.jobs.name, fields.name), (0, drizzle_orm_1.eq)(schema_1.jobs.frequency, convertFrequencyToDbString(fields.frequency)), fields.cronExpression === null
                             ? (0, drizzle_orm_1.isNull)(schema_1.jobs.cronExpression)
                             : (0, drizzle_orm_1.eq)(schema_1.jobs.cronExpression, fields.cronExpression), (0, drizzle_orm_1.eq)(schema_1.jobs.dataHash, dataHash)))
                             .limit(1),
@@ -223,7 +239,7 @@ class JobService {
                     const dbTime = performance.now() - dbStartTime;
                     const totalTime = performance.now() - startTime;
                     if (existingJobs.length > 0) {
-                        const job = toJob(existingJobs[0]);
+                        const job = mapDbRowToJob(existingJobs[0]);
                         // Cache the result for future lookups (24 hour TTL)
                         await cache_service_1.cacheService.set(cacheKey, JSON.stringify(job), JobService.CACHE_TTL.INDIVIDUAL_JOB * 96); // 24 hours
                         logger_1.logger.info('Duplicate job detected', {
@@ -313,13 +329,13 @@ class JobService {
         // Prepare data for database insertion with proper type conversion
         const insertData = {
             ...jobData,
-            frequency: frequencyToDbString(jobData.frequency),
-            status: statusToDbString(jobData.status || job_1.JobStatus.PENDING),
+            frequency: convertFrequencyToDbString(jobData.frequency),
+            status: convertStatusToDbString(jobData.status || job_1.JobStatus.PENDING),
             dataHash,
             nextRunAt: (0, scheduler_1.calculateNextRun)(jobData),
         };
         const [job] = await db_1.default.insert(schema_1.jobs).values(insertData).returning();
-        const safeJob = toJob(job);
+        const safeJob = mapDbRowToJob(job);
         // Cache the new job for future duplicate checks
         const cacheKey = `${JobService.CACHE_KEYS.DUPLICATE_CHECK}:${dataHash}`;
         await cache_service_1.cacheService.set(cacheKey, JSON.stringify(safeJob), JobService.CACHE_TTL.INDIVIDUAL_JOB * 96); // 24 hours
@@ -344,19 +360,19 @@ class JobService {
         };
         // Convert enum fields to strings for database
         if (jobData.frequency) {
-            updateData.frequency = frequencyToDbString(jobData.frequency);
+            updateData.frequency = convertFrequencyToDbString(jobData.frequency);
             updateData.nextRunAt = (0, scheduler_1.calculateNextRun)(jobData);
         }
         if (jobData.status) {
-            updateData.status = statusToDbString(jobData.status);
+            updateData.status = convertStatusToDbString(jobData.status);
         }
-        const result = await db_1.default
+        const updatedJobRows = await db_1.default
             .update(schema_1.jobs)
             .set(updateData)
             .where((0, drizzle_orm_1.eq)(schema_1.jobs.id, id))
             .returning();
-        if (result.length > 0) {
-            const safeJob = toJob(result[0]);
+        if (updatedJobRows.length > 0) {
+            const safeJob = mapDbRowToJob(updatedJobRows[0]);
             // Remove existing job from queue
             await this.queue.removeJobScheduler(`job-${id}`);
             // Invalidate all related caches
@@ -369,11 +385,11 @@ class JobService {
         return null;
     }
     async deleteJob(id) {
-        const result = await db_1.default
+        const deletedJobRows = await db_1.default
             .delete(schema_1.jobs)
             .where((0, drizzle_orm_1.eq)(schema_1.jobs.id, id))
             .returning();
-        if (result.length > 0) {
+        if (deletedJobRows.length > 0) {
             // Remove job from queue
             await this.queue.removeJobScheduler(`job-${id}`);
             // Invalidate all related caches
@@ -397,12 +413,12 @@ class JobService {
                 totalExecutionTimeMs: executionTime,
                 cacheLookupTimeMs: cacheTime
             });
-            return toJob(JSON.parse(cachedJob));
+            return mapDbRowToJob(JSON.parse(cachedJob));
         }
         // If not in cache, get from database
         const dbStartTime = performance.now();
         try {
-            const result = await db_1.default
+            const jobRows = await db_1.default
                 .select({
                 id: schema_1.jobs.id,
                 name: schema_1.jobs.name,
@@ -426,7 +442,7 @@ class JobService {
                 .where((0, drizzle_orm_1.eq)(schema_1.jobs.id, id))
                 .limit(1);
             const dbTime = performance.now() - dbStartTime;
-            if (result.length === 0) {
+            if (jobRows.length === 0) {
                 const executionTime = performance.now() - startTime;
                 logger_1.logger.debug('getJobById not found', {
                     jobId: id,
@@ -436,7 +452,7 @@ class JobService {
                 return null;
             }
             const transformStartTime = performance.now();
-            const job = toJob(result[0]);
+            const job = mapDbRowToJob(jobRows[0]);
             const transformTime = performance.now() - transformStartTime;
             // Cache the result
             const cacheSetStartTime = performance.now();
@@ -483,7 +499,7 @@ class JobService {
             });
             const parsed = JSON.parse(cachedResult);
             return {
-                jobs: parsed.jobs.map(toJob),
+                jobs: parsed.jobs.map(mapDbRowToJob),
                 total: parsed.total
             };
         }
@@ -491,7 +507,7 @@ class JobService {
         const dbStartTime = performance.now();
         try {
             const offset = (page - 1) * limit;
-            const whereClause = status ? (0, drizzle_orm_1.eq)(schema_1.jobs.status, statusToDbString(status)) : undefined;
+            const whereClause = status ? (0, drizzle_orm_1.eq)(schema_1.jobs.status, convertStatusToDbString(status)) : undefined;
             const [jobsList, total] = await Promise.all([
                 db_1.default
                     .select()
@@ -508,21 +524,21 @@ class JobService {
             ]);
             const dbTime = performance.now() - dbStartTime;
             const transformStartTime = performance.now();
-            const result = {
-                jobs: jobsList.map(toJob),
+            const jobsResponse = {
+                jobs: jobsList.map(mapDbRowToJob),
                 total,
             };
             const transformTime = performance.now() - transformStartTime;
             // Cache the result
             const cacheSetStartTime = performance.now();
-            await cache_service_1.cacheService.set(cacheKey, JSON.stringify(result), JobService.CACHE_TTL.JOB_LIST);
+            await cache_service_1.cacheService.set(cacheKey, JSON.stringify(jobsResponse), JobService.CACHE_TTL.JOB_LIST);
             const cacheSetTime = performance.now() - cacheSetStartTime;
             const executionTime = performance.now() - startTime;
             logger_1.logger.debug('getAllJobs performance metrics', {
                 page,
                 limit,
                 status: statusKey,
-                resultCount: result.jobs.length,
+                resultCount: jobsResponse.jobs.length,
                 totalExecutionTimeMs: executionTime,
                 cacheLookupTimeMs: cacheTime,
                 dbQueryTimeMs: dbTime,
@@ -530,7 +546,7 @@ class JobService {
                 cacheSetTimeMs: cacheSetTime,
                 cacheMiss: true
             });
-            return result;
+            return jobsResponse;
         }
         catch (error) {
             const dbTime = performance.now() - dbStartTime;
@@ -558,7 +574,7 @@ class JobService {
                 totalExecutionTimeMs: executionTime,
                 cacheLookupTimeMs: cacheTime
             });
-            return JSON.parse(cachedJobs).map(toJob);
+            return JSON.parse(cachedJobs).map(mapDbRowToJob);
         }
         // If not in cache, get from database
         const dbStartTime = performance.now();
@@ -566,21 +582,21 @@ class JobService {
             const jobsList = await db_1.default
                 .select()
                 .from(schema_1.jobs)
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.jobs.status, statusToDbString(job_1.JobStatus.PENDING)), (0, drizzle_orm_1.eq)(schema_1.jobs.enabled, true), (0, drizzle_orm_1.gte)(schema_1.jobs.nextRunAt, new Date())))
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.jobs.status, convertStatusToDbString(job_1.JobStatus.PENDING)), (0, drizzle_orm_1.eq)(schema_1.jobs.enabled, true), (0, drizzle_orm_1.gte)(schema_1.jobs.nextRunAt, new Date())))
                 .orderBy(schema_1.jobs.nextRunAt)
                 .limit(limit);
             const dbTime = performance.now() - dbStartTime;
             const transformStartTime = performance.now();
-            const result = jobsList.map(toJob);
+            const transformedJobs = jobsList.map(mapDbRowToJob);
             const transformTime = performance.now() - transformStartTime;
             // Cache the result
             const cacheSetStartTime = performance.now();
-            await cache_service_1.cacheService.set(cacheKey, JSON.stringify(result), JobService.CACHE_TTL.UPCOMING_JOBS);
+            await cache_service_1.cacheService.set(cacheKey, JSON.stringify(transformedJobs), JobService.CACHE_TTL.UPCOMING_JOBS);
             const cacheSetTime = performance.now() - cacheSetStartTime;
             const executionTime = performance.now() - startTime;
             logger_1.logger.debug('getUpcomingJobs performance metrics', {
                 limit,
-                resultCount: result.length,
+                resultCount: transformedJobs.length,
                 totalExecutionTimeMs: executionTime,
                 cacheLookupTimeMs: cacheTime,
                 dbQueryTimeMs: dbTime,
@@ -588,7 +604,7 @@ class JobService {
                 cacheSetTimeMs: cacheSetTime,
                 cacheMiss: true
             });
-            return result;
+            return transformedJobs;
         }
         catch (error) {
             const dbTime = performance.now() - dbStartTime;
@@ -601,7 +617,7 @@ class JobService {
         }
     }
     async enableJob(id) {
-        const result = await db_1.default
+        const enabledJobRows = await db_1.default
             .update(schema_1.jobs)
             .set({
             enabled: true,
@@ -609,8 +625,8 @@ class JobService {
         })
             .where((0, drizzle_orm_1.eq)(schema_1.jobs.id, id))
             .returning();
-        if (result.length > 0) {
-            const safeJob = toJob(result[0]);
+        if (enabledJobRows.length > 0) {
+            const safeJob = mapDbRowToJob(enabledJobRows[0]);
             // Invalidate all related caches
             await cache_service_1.cacheService.invalidateAllJobCaches(id);
             // Schedule the enabled job if it's pending
@@ -627,7 +643,7 @@ class JobService {
         return null;
     }
     async disableJob(id) {
-        const result = await db_1.default
+        const disabledJobRows = await db_1.default
             .update(schema_1.jobs)
             .set({
             enabled: false,
@@ -635,8 +651,8 @@ class JobService {
         })
             .where((0, drizzle_orm_1.eq)(schema_1.jobs.id, id))
             .returning();
-        if (result.length > 0) {
-            const safeJob = toJob(result[0]);
+        if (disabledJobRows.length > 0) {
+            const safeJob = mapDbRowToJob(disabledJobRows[0]);
             // Remove job from queue since it's disabled
             await this.queue.removeJobScheduler(`job-${id}`);
             // Invalidate all related caches
@@ -663,7 +679,7 @@ class JobService {
             .where((0, drizzle_orm_1.eq)(schema_1.jobs.id, id))
             .returning();
         if (job) {
-            const safeJob = toJob(job);
+            const safeJob = mapDbRowToJob(job);
             // Invalidate all job caches since retry count changed
             await cache_service_1.cacheService.invalidateAllJobCaches(id);
             logger_1.logger.info('Incremented retry count', {

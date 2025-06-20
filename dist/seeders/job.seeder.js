@@ -10,8 +10,12 @@ const job_1 = require("../types/job");
 const drizzle_orm_1 = require("drizzle-orm");
 const date_fns_1 = require("date-fns");
 const jobHash_1 = require("../utils/jobHash");
-// Helper functions to convert enums to database string values
-function statusToDbString(status) {
+/**
+ * Converts JobStatus enum to database string representation for seeding
+ * @param status - JobStatus enum value from application domain
+ * @returns Database string value ('pending' | 'running' | 'completed' | 'failed')
+ */
+function convertStatusToDbString(status) {
     switch (status) {
         case job_1.JobStatus.PENDING:
             return 'pending';
@@ -27,7 +31,12 @@ function statusToDbString(status) {
             return 'pending';
     }
 }
-function frequencyToDbString(frequency) {
+/**
+ * Converts JobFrequency enum to database string representation for seeding
+ * @param frequency - JobFrequency enum value from application domain
+ * @returns Database string value ('once' | 'daily' | 'weekly' | 'monthly' | 'custom')
+ */
+function convertFrequencyToDbString(frequency) {
     switch (frequency) {
         case job_1.JobFrequency.ONCE:
             return 'once';
@@ -54,8 +63,8 @@ const dummyJobs = Array.from({ length: 30 }).map((_, i) => {
     const jobData = {
         name: `Dummy Job ${i + 1}`,
         description: `This is a dummy job to simulate ${freq} tasks`,
-        status: statusToDbString(job_1.JobStatus.PENDING),
-        frequency: frequencyToDbString(freq),
+        status: convertStatusToDbString(job_1.JobStatus.PENDING),
+        frequency: convertFrequencyToDbString(freq),
         cronExpression: cronMap[freq],
         startDate: now,
         endDate: (0, date_fns_1.addDays)(now, 90),
@@ -86,6 +95,11 @@ const dummyJobs = Array.from({ length: 30 }).map((_, i) => {
         dataHash
     };
 });
+/**
+ * Seeds the database with 30 dummy jobs for testing and development
+ * Creates jobs with varied frequencies (daily, weekly, monthly) and realistic data
+ * Skips seeding if dummy jobs already exist to prevent duplicates
+ */
 async function seedJobs() {
     console.log('Seeding jobs...');
     const existing = await db_1.default.select().from(schema_1.jobs).where((0, drizzle_orm_1.eq)(schema_1.jobs.name, 'Dummy Job 1'));

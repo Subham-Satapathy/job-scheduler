@@ -6,7 +6,7 @@ import { logger } from '../utils/logger';
 import { Request, Response } from 'express';
 
 // Proven Redis-backed rate limiter using express-rate-limit + rate-limit-redis
-class ProvenRateLimiter {
+class RateLimiter {
   private static rateLimiter: any;
   private static initialized = false;
 
@@ -22,7 +22,7 @@ class ProvenRateLimiter {
         sendCommand: (...args: string[]) => redisClient.sendCommand(args),
       });
 
-      ProvenRateLimiter.rateLimiter = rateLimit({
+      RateLimiter.rateLimiter = rateLimit({
         store,
         windowMs: envConfig.RATE_LIMIT_IP_WINDOW_MS,
         max: envConfig.RATE_LIMIT_IP_MAX_REQUESTS,
@@ -67,7 +67,7 @@ class ProvenRateLimiter {
         }
       });
 
-      ProvenRateLimiter.initialized = true;
+      RateLimiter.initialized = true;
       logger.info('Proven rate limiter initialized with express-rate-limit + Redis store');
     } catch (error) {
       logger.error('Failed to initialize proven rate limiter:', error);
@@ -76,15 +76,15 @@ class ProvenRateLimiter {
   }
 
   public static isInitialized(): boolean {
-    return ProvenRateLimiter.initialized;
+    return RateLimiter.initialized;
   }
 
   // Middleware getter
   public static get middleware() {
-    if (!ProvenRateLimiter.initialized) {
+    if (!RateLimiter.initialized) {
       throw new Error('Rate limiter not initialized. Call initialize() first.');
     }
-    return ProvenRateLimiter.rateLimiter;
+    return RateLimiter.rateLimiter;
   }
 
   // Statistics method for monitoring
@@ -104,7 +104,7 @@ class ProvenRateLimiter {
         maxRequestsPerWindow: envConfig.RATE_LIMIT_IP_MAX_REQUESTS,
         maxRPS: Math.round(envConfig.RATE_LIMIT_IP_MAX_REQUESTS / (envConfig.RATE_LIMIT_IP_WINDOW_MS / 1000)),
         activeIPs: totalActiveKeys,
-        rateLimitingEnabled: ProvenRateLimiter.initialized
+        rateLimitingEnabled: RateLimiter.initialized
       };
     } catch (error) {
       logger.error('Failed to get rate limit statistics:', error);
@@ -113,4 +113,4 @@ class ProvenRateLimiter {
   }
 }
 
-export { ProvenRateLimiter }; 
+export { RateLimiter }; 

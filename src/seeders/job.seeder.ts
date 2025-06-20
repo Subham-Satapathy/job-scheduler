@@ -5,7 +5,11 @@ import { eq } from 'drizzle-orm';
 import { addDays } from 'date-fns';
 import { generateJobHash } from '../utils/jobHash';
 
-// Helper functions to convert enums to database string values
+/**
+ * Converts JobStatus enum to database string representation for seeding
+ * @param status - JobStatus enum value from application domain
+ * @returns Database string value ('pending' | 'running' | 'completed' | 'failed')
+ */
 function convertStatusToDbString(status: JobStatus): 'pending' | 'running' | 'completed' | 'failed' {
   switch (status) {
     case JobStatus.PENDING:
@@ -23,7 +27,12 @@ function convertStatusToDbString(status: JobStatus): 'pending' | 'running' | 'co
   }
 }
 
-function frequencyToDbString(frequency: JobFrequency): 'once' | 'daily' | 'weekly' | 'monthly' | 'custom' {
+/**
+ * Converts JobFrequency enum to database string representation for seeding
+ * @param frequency - JobFrequency enum value from application domain  
+ * @returns Database string value ('once' | 'daily' | 'weekly' | 'monthly' | 'custom')
+ */
+function convertFrequencyToDbString(frequency: JobFrequency): 'once' | 'daily' | 'weekly' | 'monthly' | 'custom' {
   switch (frequency) {
     case JobFrequency.ONCE:
       return 'once';
@@ -55,7 +64,7 @@ const dummyJobs = Array.from({ length: 30 }).map((_, i) => {
     name: `Dummy Job ${i + 1}`,
     description: `This is a dummy job to simulate ${freq} tasks`,
     status: convertStatusToDbString(JobStatus.PENDING),
-    frequency: frequencyToDbString(freq),
+    frequency: convertFrequencyToDbString(freq),
     cronExpression: cronMap[freq],
     startDate: now,
     endDate: addDays(now, 90),
@@ -89,6 +98,11 @@ const dummyJobs = Array.from({ length: 30 }).map((_, i) => {
   };
 });
 
+/**
+ * Seeds the database with 30 dummy jobs for testing and development
+ * Creates jobs with varied frequencies (daily, weekly, monthly) and realistic data
+ * Skips seeding if dummy jobs already exist to prevent duplicates
+ */
 async function seedJobs() {
   console.log('Seeding jobs...');
   const existing = await db.select().from(jobs).where(eq(jobs.name, 'Dummy Job 1'));

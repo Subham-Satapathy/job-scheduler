@@ -11,7 +11,7 @@ import { swaggerSpec } from './config/swagger.config';
 import { cacheService } from './services/cache.service';
 import { jobWorker } from './workers/job.worker';
 import { jobService } from './services/job.service';
-import { ProvenRateLimiter } from './middleware/rateLimiting.middleware';
+import { RateLimiter } from './middleware/rateLimiting.middleware';
 
 // Load environment variables and validate configuration
 logger.info('Starting Scheduler Microservice...');
@@ -37,8 +37,8 @@ app.use(express.json());
 
 // Proven rate limiting middleware - applied before ALL routes
 app.use((req, res, next) => {
-  if (ProvenRateLimiter.isInitialized()) {
-    ProvenRateLimiter.middleware(req, res, next);
+  if (RateLimiter.isInitialized()) {
+    RateLimiter.middleware(req, res, next);
   } else {
     // Rate limiter not ready yet, allow request
     next();
@@ -66,7 +66,7 @@ app.get('/health', (req, res) => {
 // Rate limiting statistics endpoint for monitoring
 app.get('/rate-limit-stats', async (req, res) => {
   try {
-    const stats = await ProvenRateLimiter.getStatistics();
+    const stats = await RateLimiter.getStatistics();
     const rateLimitConfig = {
       ip: {
         windowMs: envConfig.RATE_LIMIT_IP_WINDOW_MS,
@@ -122,7 +122,7 @@ async function initializeServices() {
     logger.info('Connected to Redis');
     
     logger.info('Step 1.1: Initializing rate limiter...');
-    await ProvenRateLimiter.initialize();
+    await RateLimiter.initialize();
     logger.info('Rate limiter initialized');
     
     // IP-based rate limiting is now enabled via isInitialized() check

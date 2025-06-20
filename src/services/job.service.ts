@@ -9,15 +9,20 @@ import { defaultQueueOptions, QUEUE_NAMES } from '../config/bullmq.config';
 import { cacheService } from './cache.service';
 import { generateJobHash, DuplicateCheckFields } from '../utils/jobHash';
 
-// Helper function to ensure job data is properly typed
+/**
+ * Maps a database row object to a strongly-typed Job domain object
+ * Handles enum conversion and date parsing from database format to application format
+ * @param job - Raw database row object from Drizzle query
+ * @returns Fully typed Job object with converted enums and parsed dates
+ */
 function mapDbRowToJob(job: any): Job {
   return {
     id: job.id,
     name: job.name,
     description: job.description,
-    status: dbStringToStatus(job.status),
+    status: convertDbStringToStatus(job.status),
     enabled: Boolean(job.enabled),
-    frequency: dbStringToFrequency(job.frequency),
+    frequency: convertDbStringToFrequency(job.frequency),
     cronExpression: job.cronExpression,
     startDate: new Date(job.startDate),
     endDate: job.endDate ? new Date(job.endDate) : null,
@@ -32,7 +37,12 @@ function mapDbRowToJob(job: any): Job {
   };
 }
 
-// Helper functions to convert enums to database string values
+/**
+ * Converts JobStatus enum to database string representation
+ * Maps application enum values to database-compatible string values
+ * @param status - JobStatus enum value from application domain
+ * @returns Database string value ('pending' | 'running' | 'completed' | 'failed')
+ */
 function convertStatusToDbString(status: JobStatus): 'pending' | 'running' | 'completed' | 'failed' {
   switch (status) {
     case JobStatus.PENDING:
@@ -50,7 +60,13 @@ function convertStatusToDbString(status: JobStatus): 'pending' | 'running' | 'co
   }
 }
 
-function frequencyToDbString(frequency: JobFrequency): 'once' | 'daily' | 'weekly' | 'monthly' | 'custom' {
+/**
+ * Converts JobFrequency enum to database string representation
+ * Maps application enum values to database-compatible string values
+ * @param frequency - JobFrequency enum value from application domain
+ * @returns Database string value ('once' | 'daily' | 'weekly' | 'monthly' | 'custom')
+ */
+function convertFrequencyToDbString(frequency: JobFrequency): 'once' | 'daily' | 'weekly' | 'monthly' | 'custom' {
   switch (frequency) {
     case JobFrequency.ONCE:
       return 'once';
@@ -68,7 +84,7 @@ function frequencyToDbString(frequency: JobFrequency): 'once' | 'daily' | 'weekl
 }
 
 // Helper functions to convert between database and application types
-function dbStringToStatus(status: string): JobStatus {
+function convertDbStringToStatus(status: string): JobStatus {
   switch (status.toUpperCase()) {
     case 'PENDING': return JobStatus.PENDING;
     case 'RUNNING': return JobStatus.RUNNING;
@@ -81,7 +97,7 @@ function dbStringToStatus(status: string): JobStatus {
   }
 }
 
-function dbStringToFrequency(frequency: string): JobFrequency {
+function convertDbStringToFrequency(frequency: string): JobFrequency {
   // Normalize to uppercase for backward compatibility
   const normalizedFrequency = frequency.toString().toUpperCase();
   
@@ -262,7 +278,7 @@ export class JobService {
             db.select().from(jobs)
               .where(and(
                 eq(jobs.name, fields.name),
-                eq(jobs.frequency, frequencyToDbString(fields.frequency)),
+                eq(jobs.frequency, convertFrequencyToDbString(fields.frequency)),
                 fields.cronExpression === null 
                   ? isNull(jobs.cronExpression)
                   : eq(jobs.cronExpression, fields.cronExpression),
@@ -384,7 +400,7 @@ export class JobService {
     // Prepare data for database insertion with proper type conversion
     const insertData = {
       ...jobData,
-      frequency: frequencyToDbString(jobData.frequency),
+              frequency: convertFrequencyToDbString(jobData.frequency),
       status: convertStatusToDbString(jobData.status || JobStatus.PENDING),
       dataHash,
       nextRunAt: calculateNextRun(jobData as Job),
@@ -424,7 +440,7 @@ export class JobService {
     
     // Convert enum fields to strings for database
     if (jobData.frequency) {
-      updateData.frequency = frequencyToDbString(jobData.frequency);
+      updateData.frequency = convertFrequencyToDbString(jobData.frequency);
       updateData.nextRunAt = calculateNextRun(jobData as Job);
     }
     
@@ -432,14 +448,14 @@ export class JobService {
       updateData.status = convertStatusToDbString(jobData.status);
     }
     
-    const result = await db
+    const updatedJobRows = await db
       .update(jobs)
       .set(updateData)
       .where(eq(jobs.id, id))
       .returning();
 
-    if (result.length > 0) {
-      const safeJob = mapDbRowToJob(result[0]);
+    if (updatedJobRows.length > 0) {
+      const safeJob = mapDbRowToJob(updatedJobRows[0]);
       
       // Remove existing job from queue
       await this.queue.removeJobScheduler(`job-${id}`);
@@ -458,12 +474,12 @@ export class JobService {
   }
 
   async deleteJob(id: number): Promise<boolean> {
-    const result = await db
+    const deletedJobRows = await db
       .delete(jobs)
       .where(eq(jobs.id, id))
       .returning();
 
-    if (result.length > 0) {
+    if (deletedJobRows.length > 0) {
       // Remove job from queue
       await this.queue.removeJobScheduler(`job-${id}`);
       
@@ -499,7 +515,7 @@ export class JobService {
     // If not in cache, get from database
     const dbStartTime = performance.now();
     try {
-      const result = await db
+      const jobRows = await db
         .select({
           id: jobs.id,
           name: jobs.name,
@@ -525,7 +541,7 @@ export class JobService {
       
       const dbTime = performance.now() - dbStartTime;
       
-      if (result.length === 0) {
+      if (jobRows.length === 0) {
         const executionTime = performance.now() - startTime;
         logger.debug('getJobById not found', { 
           jobId: id, 
@@ -536,7 +552,7 @@ export class JobService {
       }
       
       const transformStartTime = performance.now();
-      const job = mapDbRowToJob(result[0]);
+      const job = mapDbRowToJob(jobRows[0]);
       const transformTime = performance.now() - transformStartTime;
       
       // Cache the result
@@ -617,7 +633,7 @@ export class JobService {
       const dbTime = performance.now() - dbStartTime;
       
       const transformStartTime = performance.now();
-      const result = {
+      const jobsResponse = {
         jobs: jobsList.map(mapDbRowToJob),
         total,
       };
@@ -625,7 +641,7 @@ export class JobService {
       
       // Cache the result
       const cacheSetStartTime = performance.now();
-      await cacheService.set(cacheKey, JSON.stringify(result), JobService.CACHE_TTL.JOB_LIST);
+      await cacheService.set(cacheKey, JSON.stringify(jobsResponse), JobService.CACHE_TTL.JOB_LIST);
       const cacheSetTime = performance.now() - cacheSetStartTime;
       
       const executionTime = performance.now() - startTime;
@@ -633,7 +649,7 @@ export class JobService {
         page,
         limit,
         status: statusKey,
-        resultCount: result.jobs.length,
+        resultCount: jobsResponse.jobs.length,
         totalExecutionTimeMs: executionTime,
         cacheLookupTimeMs: cacheTime,
         dbQueryTimeMs: dbTime,
@@ -642,7 +658,7 @@ export class JobService {
         cacheMiss: true
       });
       
-      return result;
+      return jobsResponse;
     } catch (error) {
       const dbTime = performance.now() - dbStartTime;
       logger.error('getAllJobs database error', {
@@ -694,18 +710,18 @@ export class JobService {
       const dbTime = performance.now() - dbStartTime;
       
       const transformStartTime = performance.now();
-      const result = jobsList.map(mapDbRowToJob);
+      const transformedJobs = jobsList.map(mapDbRowToJob);
       const transformTime = performance.now() - transformStartTime;
       
       // Cache the result
       const cacheSetStartTime = performance.now();
-      await cacheService.set(cacheKey, JSON.stringify(result), JobService.CACHE_TTL.UPCOMING_JOBS);
+      await cacheService.set(cacheKey, JSON.stringify(transformedJobs), JobService.CACHE_TTL.UPCOMING_JOBS);
       const cacheSetTime = performance.now() - cacheSetStartTime;
       
       const executionTime = performance.now() - startTime;
       logger.debug('getUpcomingJobs performance metrics', { 
         limit,
-        resultCount: result.length,
+        resultCount: transformedJobs.length,
         totalExecutionTimeMs: executionTime,
         cacheLookupTimeMs: cacheTime,
         dbQueryTimeMs: dbTime,
@@ -714,7 +730,7 @@ export class JobService {
         cacheMiss: true
       });
       
-      return result;
+      return transformedJobs;
     } catch (error) {
       const dbTime = performance.now() - dbStartTime;
       logger.error('getUpcomingJobs database error', {
@@ -727,7 +743,7 @@ export class JobService {
   }
 
   async enableJob(id: number): Promise<Job | null> {
-    const result = await db
+    const enabledJobRows = await db
       .update(jobs)
       .set({
         enabled: true,
@@ -736,8 +752,8 @@ export class JobService {
       .where(eq(jobs.id, id))
       .returning();
 
-    if (result.length > 0) {
-      const safeJob = mapDbRowToJob(result[0]);
+    if (enabledJobRows.length > 0) {
+      const safeJob = mapDbRowToJob(enabledJobRows[0]);
       
       // Invalidate all related caches
       await cacheService.invalidateAllJobCaches(id);
@@ -759,7 +775,7 @@ export class JobService {
   }
 
   async disableJob(id: number): Promise<Job | null> {
-    const result = await db
+    const disabledJobRows = await db
       .update(jobs)
       .set({
         enabled: false,
@@ -768,8 +784,8 @@ export class JobService {
       .where(eq(jobs.id, id))
       .returning();
 
-    if (result.length > 0) {
-      const safeJob = mapDbRowToJob(result[0]);
+    if (disabledJobRows.length > 0) {
+      const safeJob = mapDbRowToJob(disabledJobRows[0]);
       
       // Remove job from queue since it's disabled
       await this.queue.removeJobScheduler(`job-${id}`);
